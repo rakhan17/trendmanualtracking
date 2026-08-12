@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>v1</title>
+    <title>V2</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
@@ -34,9 +34,6 @@
             -webkit-backdrop-filter: blur(16px);
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
-        @media screen and (orientation: portrait) {
-            #rotate-warning { display: flex !important; }
-        }
         /* Styling custom select elements */
         select {
             appearance: none;
@@ -57,19 +54,13 @@
 </head>
 <body class="text-white h-screen w-screen relative select-none">
 
-    <!-- Force Landscape Warning -->
-    <div id="rotate-warning" class="hidden absolute inset-0 z-[100] bg-black/95 flex-col items-center justify-center text-center p-6">
-        <svg class="w-12 h-12 mb-4 animate-bounce text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
-        <p class="tracking-widest text-sm uppercase">Please Rotate to Landscape</p>
-    </div>
-
     <!-- Start Screen -->
     <div id="start-screen" class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/90 backdrop-blur-md transition-opacity duration-700">
         <h1 class="text-3xl font-light tracking-[0.2em] mb-4">GEOMETRIC AR</h1>
         <p class="text-white/50 text-xs mb-8 tracking-wider text-center max-w-md px-4 leading-relaxed">
             2 Fingers = Connect Line.<br>
             4 Fingers = Multi-FX Geometry.<br>
-            Ensure well-lit environment.
+            Supports both Portrait & Landscape!
         </p>
         <button id="start-btn" class="glass-panel px-8 py-3 rounded-full uppercase tracking-widest text-sm hover:bg-white/10 transition-colors border-white/20">
             Initialize Camera
@@ -157,28 +148,23 @@
     const statusText = document.getElementById('status-text');
     const resInfo = document.getElementById('res-info');
 
-    // Offscreen buffers to handle the "Mirror Bug" and effects flawlessly
     const flippedCanvas = document.createElement('canvas');
     const flippedCtx = flippedCanvas.getContext('2d');
     const smallCanvas = document.createElement('canvas');
     const smallCtx = smallCanvas.getContext('2d');
 
-    // Patterns for FX
     let halftonePattern, noisePattern, duotoneGradient;
     let renderWidth, renderHeight, xOffset, yOffset;
 
-    // Camera Configuration State
     let currentStream = null;
     let currentLoopId = null;
     let lastVideoTime = -1;
     
-    // Default Settings
     let configLens = 'user';
     let configWidth = 1280;
     let configHeight = 720;
     let configFps = 60;
 
-    // --- SETTINGS UI ---
     function toggleSettings() {
         const modal = document.getElementById('settings-modal');
         modal.classList.toggle('hidden');
@@ -186,8 +172,6 @@
 
     async function applySettings() {
         toggleSettings();
-        
-        // Read from UI
         configLens = document.getElementById('sel-lens').value;
         const resStr = document.getElementById('sel-res').value.split('x');
         configWidth = parseInt(resStr[0]);
@@ -198,7 +182,6 @@
         await startCustomCamera();
     }
 
-    // --- RECORDING SYSTEM ---
     let mediaRecorder;
     let recordedChunks = [];
     let isRecording = false;
@@ -208,7 +191,6 @@
         
         if (!isRecording) {
             recordedChunks = [];
-            // Use configFps for recording stream
             const stream = canvasElement.captureStream(configFps); 
             
             let options = { mimeType: 'video/webm;codecs=vp9' };
@@ -239,7 +221,7 @@
             indicator.classList.add('w-[40%]', 'h-[40%]', 'rounded-md');
             statusText.innerText = "RECORDING...";
             statusText.classList.add('text-red-500');
-            document.getElementById('settings-btn').style.display = 'none'; // Hide settings while recording
+            document.getElementById('settings-btn').style.display = 'none';
         } else {
             mediaRecorder.stop();
             isRecording = false;
@@ -257,7 +239,6 @@
         flippedCanvas.width = canvasElement.width;
         flippedCanvas.height = canvasElement.height;
         
-        // Pattern 1: Halftone / Polka Dot (Noise Bulat)
         const dot = document.createElement('canvas');
         dot.width = 10; dot.height = 10;
         const dctx = dot.getContext('2d');
@@ -266,7 +247,6 @@
         dctx.beginPath(); dctx.arc(5,5, 3.5, 0, Math.PI*2); dctx.fill();
         halftonePattern = ctx.createPattern(dot, 'repeat');
 
-        // Pattern 2: Film Grain
         const noise = document.createElement('canvas');
         noise.width = 128; noise.height = 128;
         const nctx = noise.getContext('2d');
@@ -278,7 +258,6 @@
         nctx.putImageData(imgData, 0, 0);
         noisePattern = ctx.createPattern(noise, 'repeat');
 
-        // Gradient: Cyber Duotone
         duotoneGradient = ctx.createLinearGradient(0, 0, canvasElement.width, canvasElement.height);
         duotoneGradient.addColorStop(0, '#ff007f');
         duotoneGradient.addColorStop(1, '#00e5ff');
@@ -286,7 +265,6 @@
     window.addEventListener('resize', resizeAndGeneratePatterns);
     resizeAndGeneratePatterns();
 
-    // Find absolute intersection point of two diagonal lines
     function getIntersection(p1, p2, p3, p4) {
         const det = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
         if (Math.abs(det) < 0.1) return null; 
@@ -310,7 +288,6 @@
             smallCanvas.width = canvasElement.width / pixelSize;
             smallCanvas.height = canvasElement.height / pixelSize;
             smallCtx.drawImage(flippedCanvas, 0, 0, smallCanvas.width, smallCanvas.height);
-            
             ctx.imageSmoothingEnabled = false;
             ctx.drawImage(smallCanvas, 0, 0, canvasElement.width, canvasElement.height);
             ctx.imageSmoothingEnabled = true;
@@ -323,20 +300,20 @@
             ctx.fillStyle = halftonePattern;
             ctx.fillRect(0, 0, canvasElement.width, canvasElement.height);
 
+        } else if (effect === 'gradientMap') {
+            ctx.filter = 'grayscale(100%) contrast(180%)';
+            ctx.drawImage(flippedCanvas, 0, 0);
+            ctx.filter = 'none';
+            ctx.globalCompositeOperation = 'color';
+            ctx.fillStyle = duotoneGradient;
+            ctx.fillRect(0, 0, canvasElement.width, canvasElement.height);
+
         } else if (effect === 'noise') {
             ctx.filter = 'sepia(80%) contrast(130%) saturate(150%)';
             ctx.drawImage(flippedCanvas, 0, 0);
             ctx.filter = 'none';
             ctx.globalCompositeOperation = 'overlay';
             ctx.fillStyle = noisePattern;
-            ctx.fillRect(0, 0, canvasElement.width, canvasElement.height);
-
-        } else if (effect === 'duotone') {
-            ctx.filter = 'grayscale(100%) contrast(150%)';
-            ctx.drawImage(flippedCanvas, 0, 0);
-            ctx.filter = 'none';
-            ctx.globalCompositeOperation = 'overlay';
-            ctx.fillStyle = duotoneGradient;
             ctx.fillRect(0, 0, canvasElement.width, canvasElement.height);
         }
         ctx.restore();
@@ -363,7 +340,6 @@
     function onResults(results) {
         if (!videoElement.videoWidth) return;
 
-        // 1. Scale video to "Object-Fit: Cover" 
         const videoRatio = videoElement.videoWidth / videoElement.videoHeight;
         const canvasRatio = canvasElement.width / canvasElement.height;
         
@@ -379,45 +355,47 @@
             yOffset = 0;
         }
 
-        // 2. Buffer Mirror Frame (Apply mirror if using front lens)
         flippedCtx.clearRect(0, 0, flippedCanvas.width, flippedCanvas.height);
         flippedCtx.save();
         flippedCtx.translate(xOffset + renderWidth, yOffset);
         if (configLens === 'user') {
-            flippedCtx.scale(-1, 1); // Only mirror if front camera
+            flippedCtx.scale(-1, 1);
         } else {
-            // Un-translate & adjust for back camera (no mirror)
             flippedCtx.translate(-renderWidth, 0); 
         }
         flippedCtx.drawImage(videoElement, 0, 0, renderWidth, renderHeight);
         flippedCtx.restore();
 
-        // 3. Draw Normal Background
         ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
         ctx.drawImage(flippedCanvas, 0, 0);
 
         let rawPoints = [];
-        const effectsList = ['pixelate', 'duotone', 'halftone', 'noise'];
 
-        if (results.multiHandLandmarks) {
-            let pIdx = 0;
-            for (const landmarks of results.multiHandLandmarks) {
+        if (results.multiHandLandmarks && results.multiHandedness) {
+            for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+                const landmarks = results.multiHandLandmarks[i];
+                const handedness = results.multiHandedness[i].label; // 'Left' or 'Right'
+
                 const mapPoint = (lm, effectName) => {
                     let mappedX = lm.x;
-                    if (configLens === 'user') mappedX = 1 - lm.x; // Flip X if front lens
+                    if (configLens === 'user') mappedX = 1 - lm.x;
                     return {
                         x: xOffset + mappedX * renderWidth,
                         y: yOffset + lm.y * renderHeight,
                         effect: effectName
                     };
                 };
-                // KTP Efek Semantic: Mengikat warna ke jari yang bersangkutan
-                rawPoints.push(mapPoint(landmarks[4], effectsList[pIdx % 4])); pIdx++;
-                rawPoints.push(mapPoint(landmarks[8], effectsList[pIdx % 4])); pIdx++;
+
+                if (handedness === 'Right') {
+                    rawPoints.push(mapPoint(landmarks[4], 'pixelate')); 
+                    rawPoints.push(mapPoint(landmarks[8], 'noise'));     
+                } else {
+                    rawPoints.push(mapPoint(landmarks[4], 'gradientMap')); 
+                    rawPoints.push(mapPoint(landmarks[8], 'halftone'));   
+                }
             }
         }
 
-        // --- SISTEM CUBITAN (Merge Points) ---
         let mergedPoints = [];
         const MERGE_THRESHOLD = canvasElement.width * 0.08; 
 
@@ -437,23 +415,15 @@
             }
         }
 
-        // --- RENDER GEOMETRY ---
         if (mergedPoints.length === 2) {
             drawLines([mergedPoints[0], mergedPoints[1]], false);
             if(!isRecording) statusText.innerText = `TRACKING: 2 POINTS`;
-
-        } else if (mergedPoints.length === 3) {
-            drawFilteredArea([mergedPoints[0], mergedPoints[1], mergedPoints[2]], mergedPoints[0].effect);
-            drawLines([mergedPoints[0], mergedPoints[1], mergedPoints[2]], true);
-            if(!isRecording) statusText.innerText = `TRACKING: 3 POINTS`;
 
         } else if (mergedPoints.length === 4) {
             let cx = (mergedPoints[0].x + mergedPoints[1].x + mergedPoints[2].x + mergedPoints[3].x) / 4;
             let cy = (mergedPoints[0].y + mergedPoints[1].y + mergedPoints[2].y + mergedPoints[3].y) / 4;
             
-            mergedPoints.sort((a, b) => {
-                return Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx);
-            });
+            mergedPoints.sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
 
             let P0 = mergedPoints[0];
             let P1 = mergedPoints[1];
@@ -476,7 +446,6 @@
             if(!isRecording) statusText.innerText = `TRACKING: WAITING...`;
         }
 
-        // --- DRAW WATERMARK (ONLY IN RECORDING) ---
         if (isRecording) {
             ctx.save();
             ctx.font = "600 16px Inter, sans-serif";
@@ -505,7 +474,6 @@
     });
     hands.onResults(onResults);
 
-    // Custom WebRTC Loop for forcing constraints
     async function startCustomCamera() {
         if (currentStream) {
             currentStream.getTracks().forEach(track => track.stop());
@@ -514,7 +482,6 @@
             cancelAnimationFrame(currentLoopId);
         }
 
-        // Apply device constraints
         const constraints = {
             video: {
                 facingMode: configLens,
@@ -528,7 +495,6 @@
             currentStream = await navigator.mediaDevices.getUserMedia(constraints);
             videoElement.srcObject = currentStream;
             
-            // Extract actual applied settings from device hardware
             const track = currentStream.getVideoTracks()[0];
             const settings = track.getSettings();
             resInfo.innerText = `${settings.width}x${settings.height} - ${settings.frameRate}FPS`;
@@ -540,12 +506,10 @@
                 };
             });
 
-            // The Rendering & Processing Loop
             async function detectionLoop() {
                 if (!videoElement.paused && !videoElement.ended && videoElement.readyState >= 2) {
                     if (videoElement.currentTime !== lastVideoTime) {
                         lastVideoTime = videoElement.currentTime;
-                        // Send fresh frame to AI
                         await hands.send({ image: videoElement });
                     }
                 }
@@ -560,10 +524,18 @@
         }
     }
 
-    // Initial Start
     document.getElementById('start-btn').addEventListener('click', async () => {
         document.getElementById('start-btn').classList.add('hidden');
         document.getElementById('loading-text').classList.remove('hidden');
+        
+        // Request Fullscreen Safely
+        try {
+            if (document.documentElement.requestFullscreen) {
+                await document.documentElement.requestFullscreen();
+            }
+        } catch(e) {
+            console.log("Fullscreen restriction bypassed");
+        }
         
         await startCustomCamera();
         
