@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Minimalist AR Geometric Filter</title>
+    <title>v1</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
@@ -246,7 +246,6 @@ function drawFilteredArea(points, effect) {
         }
 
         // 2. Pre-render a perfectly mirrored frame to Offscreen Buffer
-        // This permanently solves the "Left becomes Right inside the filter" bug!
         flippedCtx.clearRect(0, 0, flippedCanvas.width, flippedCanvas.height);
         flippedCtx.save();
         flippedCtx.translate(xOffset + renderWidth, yOffset);
@@ -258,79 +257,92 @@ function drawFilteredArea(points, effect) {
         ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
         ctx.drawImage(flippedCanvas, 0, 0);
 
-        let handsData = [];
+        let rawPoints = [];
+        // Kita siapkan 4 efek yang akan "diikat" ke masing-masing 4 jari
+        const effectsList = ['pixelate', 'duotone', 'halftone', 'noise'];
+        let ptIdx = 0;
+
         if (results.multiHandLandmarks) {
             for (const landmarks of results.multiHandLandmarks) {
-                // Map [0,1] landmarks perfectly to the cropped/mirrored canvas
-                const mapPoint = (lm) => ({
-                    x: xOffset + (1 - lm.x) * renderWidth, // (1 - x) to account for mirror
-                    y: yOffset + lm.y * renderHeight
+                // Sekarang setiap titik yang dipetakan akan MEMBAWA properti "effect"-nya sendiri
+                const mapPoint = (lm, effectName) => ({
+                    x: xOffset + (1 - lm.x) * renderWidth,
+                    y: yOffset + lm.y * renderHeight,
+                    effect: effectName
                 });
-                
-                // Ambil titik jempol dan telunjuk
-                const thumb = mapPoint(landmarks[4]);
-                const index = mapPoint(landmarks[8]); 
-
-                // Hitung titik tengah (X) tangan untuk menentukan Kiri / Kanan di layar
-                const cx = (thumb.x + index.x) / 2;
-                
-                handsData.push({ thumb, index, cx });
+                rawPoints.push(mapPoint(landmarks[4], effectsList[ptIdx % 4])); ptIdx++; // Jempol
+                rawPoints.push(mapPoint(landmarks[8], effectsList[ptIdx % 4])); ptIdx++; // Telunjuk
             }
         }
 
-        if (handsData.length > 2) handsData = handsData.slice(0, 2);
+        // --- SISTEM MERGE TITIK (Deteksi Jari Menempel / Cubitan) ---
+        let mergedPoints = [];
+        // Toleransi jarak menempel (sekitar 8% dari lebar layar)
+        const MERGE_THRESHOLD = canvasElement.width * 0.08; 
 
-        if (handsData.length === 1) {
-            // STATE 1: 1 Tangan (2 Jari) = Garis
-            drawLines([handsData[0].thumb, handsData[0].index], false);
+        for (let pt of rawPoints) {
+            let isMerged = false;
+            for (let mPt of mergedPoints) {
+                if (getDist(pt, mPt) < MERGE_THRESHOLD) {
+                    // Gabungkan di titik tengah
+                    mPt.x = (mPt.x * mPt.count + pt.x) / (mPt.count + 1);
+                    mPt.y = (mPt.y * mPt.count + pt.y) / (mPt.count + 1);
+                    mPt.count++;
+                    isMerged = true;
+                    break;
+                }
+            }
+            if (!isMerged) {
+                // Titik baru lahir, dia mewarisi efek bawaannya!
+                mergedPoints.push({ x: pt.x, y: pt.y, count: 1, effect: pt.effect });
+            }
+        }
+
+        // --- RENDER AREA BERDASARKAN JUMLAH TITIK SETELAH DIGABUNG ---
+        if (mergedPoints.length === 2) {
+            drawLines([mergedPoints[0], mergedPoints[1]], false);
             statusText.innerText = `TRACKING: 2 POINTS`;
 
-        } else if (handsData.length === 2) {
-            // STATE 2: 2 Tangan (4 Jari) = Multi-FX Geometry
+        } else if (mergedPoints.length === 3) {
+            // Segitiga akan menggunakan efek dari jari pertama pembentuknya
+            drawFilteredArea([mergedPoints[0], mergedPoints[1], mergedPoints[2]], mergedPoints[0].effect);
+            drawLines([mergedPoints[0], mergedPoints[1], mergedPoints[2]], true);
+            statusText.innerText = `TRACKING: 3 POINTS`;
 
-            // 1. Dapatkan posisi masing-masing jari
-            const T1_Index = handsData[0].index;
-            const T1_Thumb = handsData[0].thumb;
-            const T2_Index = handsData[1].index;
-            const T2_Thumb = handsData[1].thumb;
+        } else if (mergedPoints.length === 4) {
+            
+            // ANTI-BOCOR: Mengurutkan secara melingkar
+            let cx = (mergedPoints[0].x + mergedPoints[1].x + mergedPoints[2].x + mergedPoints[3].x) / 4;
+            let cy = (mergedPoints[0].y + mergedPoints[1].y + mergedPoints[2].y + mergedPoints[3].y) / 4;
+            
+            mergedPoints.sort((a, b) => {
+                return Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx);
+            });
 
-            // 2. Kunci 4 Titik agar membentuk segiempat dengan diagonal yang presisi
-            // Urutan: Kiri Atas -> Kiri Bawah -> Kanan Bawah -> Kanan Atas
-            // Catatan: Karena fitur ini "ugal-ugalan", kita paksa hubungkan berdasarkan urutan tangan di kamera
-            let P1, P2, P3, P4;
+            let P0 = mergedPoints[0];
+            let P1 = mergedPoints[1];
+            let P2 = mergedPoints[2];
+            let P3 = mergedPoints[3];
 
-            // Sortir mana tangan Kiri & Kanan di layar
-            if (handsData[0].cx < handsData[1].cx) {
-                P1 = T1_Index; // Kiri Atas (Asumsi)
-                P2 = T1_Thumb; // Kiri Bawah
-                P3 = T2_Thumb; // Kanan Bawah
-                P4 = T2_Index; // Kanan Atas
-            } else {
-                P1 = T2_Index; 
-                P2 = T2_Thumb; 
-                P3 = T1_Thumb; 
-                P4 = T1_Index; 
-            }
-
-            // 3. Cari titik perpotongan X matematis (Pasti persis di tengah 4 jari, tidak peduli jarak Z)
-            const center = getIntersection(P1, P3, P2, P4);
+            // Cari perpotongan absolut garis silang (X)
+            const center = getIntersection(P0, P2, P1, P3);
 
             if (center) {
-                // 4. Render 4 area segitiga yang PASTI menempel ke titik Center tanpa melenceng
-                drawFilteredArea([P1, P2, center], 'pixelate'); 
-                drawFilteredArea([P2, P3, center], 'duotone');  
-                drawFilteredArea([P3, P4, center], 'halftone'); 
-                drawFilteredArea([P4, P1, center], 'noise');    
+                // MAGIC-NYA DI SINI: Efek dirender berdasarkan JATI DIRI titiknya (P0.effect, P1.effect, dst)
+                // Jadi kalau jarimu diputar (P0 pindah ke bawah), filternya akan otomatis ikut ke bawah!
+                drawFilteredArea([P0, P1, center], P0.effect); 
+                drawFilteredArea([P1, P2, center], P1.effect);  
+                drawFilteredArea([P2, P3, center], P2.effect); 
+                drawFilteredArea([P3, P0, center], P3.effect);    
 
-                // 5. Gambar Garis Pinggir & Garis Silang (Sama persis dengan area filternya)
-                drawLines([P1, P2, P3, P4], true); // Box luar
-                drawLines([P1, P3], false); // Silang 1
-                drawLines([P2, P4], false); // Silang 2
+                drawLines([P0, P1, P2, P3], true); 
+                drawLines([P0, P2], false); 
+                drawLines([P1, P3], false); 
             }
             
             statusText.innerText = `TRACKING: 4 POINTS`;
         } else {
-            statusText.innerText = `TRACKING: SEARCHING...`;
+            statusText.innerText = `TRACKING: ${mergedPoints.length} POINTS`;
         }
     }
 
