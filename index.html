@@ -151,16 +151,16 @@
 window.addEventListener('resize', resizeAndGeneratePatterns);
 resizeAndGeneratePatterns();
 
-// Find center X for 4 points
+// Find absolute intersection point of two diagonal lines
 function getIntersection(p1, p2, p3, p4) {
-        const det = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
-        if (det === 0) return null; 
-        const x = ((p1.x * p2.y - p1.y * p2.x) * (p3.x - p4.x) - (p1.x - p2.x) * (p3.x * p4.y - p3.y * p4.x)) / det;
-        const y = ((p1.x * p2.y - p1.y * p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x * p4.y - p3.y * p4.x)) / det;
-        return { x, y };
-    }
+    const det = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
+    if (Math.abs(det) < 0.1) return null; // Parallel/identical lines protection
+    const x = ((p1.x * p2.y - p1.y * p2.x) * (p3.x - p4.x) - (p1.x - p2.x) * (p3.x * p4.y - p3.y * p4.x)) / det;
+    const y = ((p1.x * p2.y - p1.y * p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x * p4.y - p3.y * p4.x)) / det;
+    return { x, y };
+}
 
-    function drawFilteredArea(points, effect) {
+function drawFilteredArea(points, effect) {
         ctx.save();
         ctx.beginPath();
         ctx.moveTo(points[0].x, points[0].y);
@@ -258,7 +258,7 @@ function getIntersection(p1, p2, p3, p4) {
         ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
         ctx.drawImage(flippedCanvas, 0, 0);
 
-        let activePoints = [];
+        let handsData = [];
         if (results.multiHandLandmarks) {
             for (const landmarks of results.multiHandLandmarks) {
                 // Map [0,1] landmarks perfectly to the cropped/mirrored canvas
@@ -267,79 +267,79 @@ function getIntersection(p1, p2, p3, p4) {
                     y: yOffset + lm.y * renderHeight
                 });
                 
-                // Mengambil titik tulang (landmarks)
-                const wrist = landmarks[0]; // Pergelangan
-                const thumbTip = landmarks[4]; // Ujung jempol
-                const thumbMCP = landmarks[2]; // Pangkal jempol
-                const indexTip = landmarks[8]; // Ujung telunjuk
-                const indexPIP = landmarks[6]; // Sendi tengah telunjuk
+                // Ambil titik jempol dan telunjuk
+                const thumb = mapPoint(landmarks[4]);
+                const index = mapPoint(landmarks[8]); 
 
-                // Fungsi batas visibilitas (mengecek apakah jari benar-benar ada di layar kamera)
-                const isVisible = (lm) => lm.x >= -0.1 && lm.x <= 1.1 && lm.y >= -0.1 && lm.y <= 1.1;
-
-                // Logika Cerdas: 
-                // Jika jarak ujung jari ke pergelangan lebih jauh dari sendi pangkal ke pergelangan, 
-                // berarti jari sedang tegak/dibuka. Jika ditekuk atau disembunyikan, nilainya salah.
-                const isThumbOpen = getDist(thumbTip, wrist) > getDist(thumbMCP, wrist) && isVisible(thumbTip);
-                const isIndexOpen = getDist(indexTip, wrist) > getDist(indexPIP, wrist) && isVisible(indexTip);
-
-                if (isThumbOpen) activePoints.push(mapPoint(thumbTip)); // Masukkan Jempol
-                if (isIndexOpen) activePoints.push(mapPoint(indexTip)); // Masukkan Telunjuk
+                // Hitung titik tengah (X) tangan untuk menentukan Kiri / Kanan di layar
+                const cx = (thumb.x + index.x) / 2;
+                
+                handsData.push({ thumb, index, cx });
             }
         }
 
-        if (activePoints.length > 4) activePoints = activePoints.slice(0, 4);
+        if (handsData.length > 2) handsData = handsData.slice(0, 2);
 
-        // Update UI
-        statusText.innerText = `TRACKING: ${activePoints.length} POINTS`;
+        if (handsData.length === 1) {
+            // STATE 1: 1 Tangan (2 Jari) = Garis
+            drawLines([handsData[0].thumb, handsData[0].index], false);
+            statusText.innerText = `TRACKING: 2 POINTS`;
 
-        if (activePoints.length === 2) {
-            // STATE 1: 2 Fingers = Simple Connecting Line (No Area)
-            drawLines(activePoints, false);
+        } else if (handsData.length === 2) {
+            // STATE 2: 2 Tangan (4 Jari) = Multi-FX Geometry
 
-        } else if (activePoints.length === 3) {
-            // STATE 2: 3 Fingers = Triangle Area
-            drawFilteredArea(activePoints, 'halftone');
-            drawLines(activePoints, true);
+            // 1. Dapatkan posisi masing-masing jari
+            const T1_Index = handsData[0].index;
+            const T1_Thumb = handsData[0].thumb;
+            const T2_Index = handsData[1].index;
+            const T2_Thumb = handsData[1].thumb;
 
-        } else if (activePoints.length === 4) {
-            // STATE 3: 4 Fingers = Complex 'X' Geometry
-            // Mengurutkan titik secara melingkar (berdasarkan sudut dari titik berat/tengah)
-            // Ini mencegah efek "bocor" (bentuk pita/silang) saat jari ditukar posisinya
-            const cx = (activePoints[0].x + activePoints[1].x + activePoints[2].x + activePoints[3].x) / 4;
-            const cy = (activePoints[0].y + activePoints[1].y + activePoints[2].y + activePoints[3].y) / 4;
-            
-            const sorted = activePoints.sort((p1, p2) => {
-                return Math.atan2(p1.y - cy, p1.x - cx) - Math.atan2(p2.y - cy, p2.x - cx);
-            });
+            // 2. Kunci 4 Titik agar membentuk segiempat dengan diagonal yang presisi
+            // Urutan: Kiri Atas -> Kiri Bawah -> Kanan Bawah -> Kanan Atas
+            // Catatan: Karena fitur ini "ugal-ugalan", kita paksa hubungkan berdasarkan urutan tangan di kamera
+            let P1, P2, P3, P4;
 
-            const A = sorted[0]; // Kiri Atas
-            const B = sorted[1]; // Kanan Atas
-            const C = sorted[2]; // Kanan Bawah
-            const D = sorted[3]; // Kiri Bawah
-            
-            // Titik potong menyilang antar jari (Diagonal) sekarang PASTI selalu di dalam bentuk
-            const center = getIntersection(A, C, B, D);
+            // Sortir mana tangan Kiri & Kanan di layar
+            if (handsData[0].cx < handsData[1].cx) {
+                P1 = T1_Index; // Kiri Atas (Asumsi)
+                P2 = T1_Thumb; // Kiri Bawah
+                P3 = T2_Thumb; // Kanan Bawah
+                P4 = T2_Index; // Kanan Atas
+            } else {
+                P1 = T2_Index; 
+                P2 = T2_Thumb; 
+                P3 = T1_Thumb; 
+                P4 = T1_Index; 
+            }
+
+            // 3. Cari titik perpotongan X matematis (Pasti persis di tengah 4 jari, tidak peduli jarak Z)
+            const center = getIntersection(P1, P3, P2, P4);
 
             if (center) {
-                drawFilteredArea([A, B, center], 'pixelate'); // Top
-                drawFilteredArea([B, C, center], 'duotone');  // Right
-                drawFilteredArea([C, D, center], 'halftone'); // Bottom
-                drawFilteredArea([D, A, center], 'noise');    // Left
+                // 4. Render 4 area segitiga yang PASTI menempel ke titik Center tanpa melenceng
+                drawFilteredArea([P1, P2, center], 'pixelate'); 
+                drawFilteredArea([P2, P3, center], 'duotone');  
+                drawFilteredArea([P3, P4, center], 'halftone'); 
+                drawFilteredArea([P4, P1, center], 'noise');    
 
-                drawLines([A, B, C, D], true); // Garis keliling
-                drawLines([A, C], false); // Cross line 1
-                drawLines([B, D], false); // Cross line 2
+                // 5. Gambar Garis Pinggir & Garis Silang (Sama persis dengan area filternya)
+                drawLines([P1, P2, P3, P4], true); // Box luar
+                drawLines([P1, P3], false); // Silang 1
+                drawLines([P2, P4], false); // Silang 2
             }
+            
+            statusText.innerText = `TRACKING: 4 POINTS`;
+        } else {
+            statusText.innerText = `TRACKING: SEARCHING...`;
         }
     }
 
 const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
 hands.setOptions({
     maxNumHands: 2,
-    modelComplexity: 1, // MAKSIMAL ADALAH 1 (0 = Cepat, 1 = Paling Akurat). Jika 2 akan crash.
-    minDetectionConfidence: 0.6, // Disesuaikan untuk akurasi lebih baik tanpa ngelag
-    minTrackingConfidence: 0.6
+    modelComplexity: 1, 
+    minDetectionConfidence: 0.5, // Diturunkan agar lebih agresif menangkap tangan meskipun buram
+    minTrackingConfidence: 0.5   // Diturunkan agar tracking lebih menempel dan ugal-ugalan
 });
 hands.onResults(onResults);
 
