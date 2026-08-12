@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>v1</title>
+    <title>Minimalist AR Geometric Filter</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
     
@@ -30,13 +29,29 @@
             display: none;
         }
         .glass-panel {
-            background: rgba(255, 255, 255, 0.03);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
+            background: rgba(20, 20, 20, 0.4);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
         @media screen and (orientation: portrait) {
             #rotate-warning { display: flex !important; }
+        }
+        /* Styling custom select elements */
+        select {
+            appearance: none;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            outline: none;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        select option {
+            background: #111;
+            color: white;
         }
     </style>
 </head>
@@ -53,7 +68,6 @@
         <h1 class="text-3xl font-light tracking-[0.2em] mb-4">GEOMETRIC AR</h1>
         <p class="text-white/50 text-xs mb-8 tracking-wider text-center max-w-md px-4 leading-relaxed">
             2 Fingers = Connect Line.<br>
-            3 Fingers = Halftone Dots.<br>
             4 Fingers = Multi-FX Geometry.<br>
             Ensure well-lit environment.
         </p>
@@ -69,34 +83,79 @@
     <video id="input_video" autoplay playsinline></video>
     <canvas id="output_canvas"></canvas>
 
-    <!-- UI Layer -->
-    <div id="ui-layer" class="absolute inset-0 z-20 pointer-events-none flex flex-col justify-between p-6 opacity-0 transition-opacity duration-1000">
-        <!-- Top Info -->
-        <div class="flex justify-between items-start w-full">
-            <div class="flex items-center space-x-3">
-                <div class="w-2 h-2 rounded-full bg-white animate-pulse"></div>
-                <span id="status-text" class="text-[10px] uppercase tracking-[0.2em] font-semibold text-white/80">TRACKING: SEARCHING...</span>
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="hidden absolute inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center">
+        <div class="glass-panel p-6 rounded-xl w-80 flex flex-col space-y-4">
+            <h2 class="text-sm tracking-[0.2em] text-white/80 border-b border-white/10 pb-2 mb-2">CAMERA SETTINGS</h2>
+            
+            <div class="flex flex-col space-y-1">
+                <label class="text-[10px] uppercase tracking-widest text-white/50">LENS</label>
+                <select id="sel-lens">
+                    <option value="user">Front (Selfie)</option>
+                    <option value="environment">Back (Main Camera)</option>
+                </select>
             </div>
-            <div class="text-[10px] uppercase tracking-[0.2em] text-white/50">
-                1080P - 60FPS
+            
+            <div class="flex flex-col space-y-1">
+                <label class="text-[10px] uppercase tracking-widest text-white/50">RESOLUTION (IDEAL)</label>
+                <select id="sel-res">
+                    <option value="640x480">480p (Fastest)</option>
+                    <option value="1280x720" selected>720p (Balanced)</option>
+                    <option value="1920x1080">1080p (High Res)</option>
+                    <option value="3840x2160">4K (Extreme)</option>
+                </select>
             </div>
-        </div>
 
-        <!-- Controls -->
-        <div class="flex justify-between items-end w-full">
-            <div class="w-16 h-16 rounded-full border border-white/30 flex items-center justify-center p-1 backdrop-blur-sm pointer-events-auto cursor-pointer hover:border-white transition-colors" onclick="flashScreen()">
-                <div class="w-full h-full bg-white/20 rounded-full"></div>
+            <div class="flex flex-col space-y-1">
+                <label class="text-[10px] uppercase tracking-widest text-white/50">TARGET FPS</label>
+                <select id="sel-fps">
+                    <option value="24">24 FPS (Cinematic)</option>
+                    <option value="30">30 FPS (Standard)</option>
+                    <option value="60" selected>60 FPS (Smooth)</option>
+                    <option value="120">120 FPS (Ultra Smooth)</option>
+                </select>
+            </div>
+
+            <div class="pt-4 flex justify-end space-x-3">
+                <button onclick="toggleSettings()" class="text-xs tracking-widest text-white/50 hover:text-white px-3 py-2">CANCEL</button>
+                <button onclick="applySettings()" class="text-xs tracking-widest bg-white text-black px-4 py-2 rounded hover:bg-white/80">APPLY & RESTART</button>
             </div>
         </div>
     </div>
 
-    <div id="flash" class="absolute inset-0 z-[100] bg-white opacity-0 pointer-events-none transition-opacity duration-100"></div>
+    <!-- UI Layer -->
+    <div id="ui-layer" class="absolute inset-0 z-20 pointer-events-none flex flex-col justify-between p-6 opacity-0 transition-opacity duration-1000">
+        <!-- Top Info -->
+        <div class="flex justify-between items-start w-full">
+            <div class="flex items-center space-x-3 pointer-events-auto">
+                <div class="w-2 h-2 rounded-full bg-white animate-pulse"></div>
+                <span id="status-text" class="text-[10px] uppercase tracking-[0.2em] font-semibold text-white/80">TRACKING: SEARCHING...</span>
+            </div>
+            <div class="flex flex-col items-end space-y-2 pointer-events-auto">
+                <!-- Settings Button -->
+                <button id="settings-btn" onclick="toggleSettings()" class="p-2 bg-black/20 rounded-full hover:bg-black/50 transition-colors backdrop-blur-sm border border-white/10">
+                    <svg class="w-5 h-5 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                </button>
+                <div id="res-info" class="text-[10px] uppercase tracking-[0.2em] text-white/50 bg-black/20 px-2 py-1 rounded backdrop-blur-sm">
+                    STARTING...
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="flex justify-end items-end w-full">
+            <div id="record-btn" class="w-16 h-16 rounded-full border-2 border-white/50 flex items-center justify-center p-1 backdrop-blur-sm pointer-events-auto cursor-pointer hover:border-white transition-colors" onclick="toggleRecording()">
+                <div id="record-indicator" class="w-[90%] h-[90%] bg-red-600 rounded-full transition-all duration-300 shadow-[0_0_15px_rgba(220,38,38,0.5)]"></div>
+            </div>
+        </div>
+    </div>
 
 <script>
     const videoElement = document.getElementById('input_video');
     const canvasElement = document.getElementById('output_canvas');
     const ctx = canvasElement.getContext('2d');
     const statusText = document.getElementById('status-text');
+    const resInfo = document.getElementById('res-info');
 
     // Offscreen buffers to handle the "Mirror Bug" and effects flawlessly
     const flippedCanvas = document.createElement('canvas');
@@ -106,14 +165,90 @@
 
     // Patterns for FX
     let halftonePattern, noisePattern, duotoneGradient;
-
-    // Viewport Math
     let renderWidth, renderHeight, xOffset, yOffset;
 
-    function flashScreen() {
-        const flash = document.getElementById('flash');
-        flash.style.opacity = '1';
-        setTimeout(() => flash.style.opacity = '0', 100);
+    // Camera Configuration State
+    let currentStream = null;
+    let currentLoopId = null;
+    let lastVideoTime = -1;
+    
+    // Default Settings
+    let configLens = 'user';
+    let configWidth = 1280;
+    let configHeight = 720;
+    let configFps = 60;
+
+    // --- SETTINGS UI ---
+    function toggleSettings() {
+        const modal = document.getElementById('settings-modal');
+        modal.classList.toggle('hidden');
+    }
+
+    async function applySettings() {
+        toggleSettings();
+        
+        // Read from UI
+        configLens = document.getElementById('sel-lens').value;
+        const resStr = document.getElementById('sel-res').value.split('x');
+        configWidth = parseInt(resStr[0]);
+        configHeight = parseInt(resStr[1]);
+        configFps = parseInt(document.getElementById('sel-fps').value);
+        
+        statusText.innerText = "TRACKING: RESTARTING LENS...";
+        await startCustomCamera();
+    }
+
+    // --- RECORDING SYSTEM ---
+    let mediaRecorder;
+    let recordedChunks = [];
+    let isRecording = false;
+
+    function toggleRecording() {
+        const indicator = document.getElementById('record-indicator');
+        
+        if (!isRecording) {
+            recordedChunks = [];
+            // Use configFps for recording stream
+            const stream = canvasElement.captureStream(configFps); 
+            
+            let options = { mimeType: 'video/webm;codecs=vp9' };
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                options = { mimeType: 'video/webm' }; 
+            }
+
+            mediaRecorder = new MediaRecorder(stream, options);
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) recordedChunks.push(e.data);
+            };
+            mediaRecorder.onstop = () => {
+                const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = 'AR_Geometric_Record.webm';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+            };
+
+            mediaRecorder.start();
+            isRecording = true;
+            
+            indicator.classList.remove('w-[90%]', 'h-[90%]', 'rounded-full');
+            indicator.classList.add('w-[40%]', 'h-[40%]', 'rounded-md');
+            statusText.innerText = "RECORDING...";
+            statusText.classList.add('text-red-500');
+            document.getElementById('settings-btn').style.display = 'none'; // Hide settings while recording
+        } else {
+            mediaRecorder.stop();
+            isRecording = false;
+            
+            indicator.classList.add('w-[90%]', 'h-[90%]', 'rounded-full');
+            indicator.classList.remove('w-[40%]', 'h-[40%]', 'rounded-md');
+            statusText.classList.remove('text-red-500');
+            document.getElementById('settings-btn').style.display = 'block';
+        }
     }
 
     function resizeAndGeneratePatterns() {
@@ -144,33 +279,33 @@
         noisePattern = ctx.createPattern(noise, 'repeat');
 
         // Gradient: Cyber Duotone
-    duotoneGradient = ctx.createLinearGradient(0, 0, canvasElement.width, canvasElement.height);
-    duotoneGradient.addColorStop(0, '#ff007f');
-    duotoneGradient.addColorStop(1, '#00e5ff');
-}
-window.addEventListener('resize', resizeAndGeneratePatterns);
-resizeAndGeneratePatterns();
+        duotoneGradient = ctx.createLinearGradient(0, 0, canvasElement.width, canvasElement.height);
+        duotoneGradient.addColorStop(0, '#ff007f');
+        duotoneGradient.addColorStop(1, '#00e5ff');
+    }
+    window.addEventListener('resize', resizeAndGeneratePatterns);
+    resizeAndGeneratePatterns();
 
-// Find absolute intersection point of two diagonal lines
-function getIntersection(p1, p2, p3, p4) {
-    const det = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
-    if (Math.abs(det) < 0.1) return null; // Parallel/identical lines protection
-    const x = ((p1.x * p2.y - p1.y * p2.x) * (p3.x - p4.x) - (p1.x - p2.x) * (p3.x * p4.y - p3.y * p4.x)) / det;
-    const y = ((p1.x * p2.y - p1.y * p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x * p4.y - p3.y * p4.x)) / det;
-    return { x, y };
-}
+    // Find absolute intersection point of two diagonal lines
+    function getIntersection(p1, p2, p3, p4) {
+        const det = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
+        if (Math.abs(det) < 0.1) return null; 
+        const x = ((p1.x * p2.y - p1.y * p2.x) * (p3.x - p4.x) - (p1.x - p2.x) * (p3.x * p4.y - p3.y * p4.x)) / det;
+        const y = ((p1.x * p2.y - p1.y * p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x * p4.y - p3.y * p4.x)) / det;
+        return { x, y };
+    }
 
-function drawFilteredArea(points, effect) {
+    function drawFilteredArea(points, effect) {
+        if(points.length < 3) return;
         ctx.save();
         ctx.beginPath();
         ctx.moveTo(points[0].x, points[0].y);
         for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
         ctx.closePath();
         
-        ctx.clip(); // Masking to the geometric shape
+        ctx.clip(); 
 
         if (effect === 'pixelate') {
-            // Draw pixelated image by downscaling then upscaling
             const pixelSize = 12;
             smallCanvas.width = canvasElement.width / pixelSize;
             smallCanvas.height = canvasElement.height / pixelSize;
@@ -200,11 +335,10 @@ function drawFilteredArea(points, effect) {
             ctx.filter = 'grayscale(100%) contrast(150%)';
             ctx.drawImage(flippedCanvas, 0, 0);
             ctx.filter = 'none';
-            ctx.globalCompositeOperation = 'overlay'; // screen or overlay for cyber vibe
+            ctx.globalCompositeOperation = 'overlay';
             ctx.fillStyle = duotoneGradient;
             ctx.fillRect(0, 0, canvasElement.width, canvasElement.height);
         }
-        
         ctx.restore();
     }
 
@@ -229,7 +363,7 @@ function drawFilteredArea(points, effect) {
     function onResults(results) {
         if (!videoElement.videoWidth) return;
 
-        // 1. Precise Math to scale video to "Object-Fit: Cover" 
+        // 1. Scale video to "Object-Fit: Cover" 
         const videoRatio = videoElement.videoWidth / videoElement.videoHeight;
         const canvasRatio = canvasElement.width / canvasElement.height;
         
@@ -245,11 +379,16 @@ function drawFilteredArea(points, effect) {
             yOffset = 0;
         }
 
-        // 2. Pre-render a perfectly mirrored frame to Offscreen Buffer
+        // 2. Buffer Mirror Frame (Apply mirror if using front lens)
         flippedCtx.clearRect(0, 0, flippedCanvas.width, flippedCanvas.height);
         flippedCtx.save();
         flippedCtx.translate(xOffset + renderWidth, yOffset);
-        flippedCtx.scale(-1, 1);
+        if (configLens === 'user') {
+            flippedCtx.scale(-1, 1); // Only mirror if front camera
+        } else {
+            // Un-translate & adjust for back camera (no mirror)
+            flippedCtx.translate(-renderWidth, 0); 
+        }
         flippedCtx.drawImage(videoElement, 0, 0, renderWidth, renderHeight);
         flippedCtx.restore();
 
@@ -258,33 +397,34 @@ function drawFilteredArea(points, effect) {
         ctx.drawImage(flippedCanvas, 0, 0);
 
         let rawPoints = [];
-        // Kita siapkan 4 efek yang akan "diikat" ke masing-masing 4 jari
         const effectsList = ['pixelate', 'duotone', 'halftone', 'noise'];
-        let ptIdx = 0;
 
         if (results.multiHandLandmarks) {
+            let pIdx = 0;
             for (const landmarks of results.multiHandLandmarks) {
-                // Sekarang setiap titik yang dipetakan akan MEMBAWA properti "effect"-nya sendiri
-                const mapPoint = (lm, effectName) => ({
-                    x: xOffset + (1 - lm.x) * renderWidth,
-                    y: yOffset + lm.y * renderHeight,
-                    effect: effectName
-                });
-                rawPoints.push(mapPoint(landmarks[4], effectsList[ptIdx % 4])); ptIdx++; // Jempol
-                rawPoints.push(mapPoint(landmarks[8], effectsList[ptIdx % 4])); ptIdx++; // Telunjuk
+                const mapPoint = (lm, effectName) => {
+                    let mappedX = lm.x;
+                    if (configLens === 'user') mappedX = 1 - lm.x; // Flip X if front lens
+                    return {
+                        x: xOffset + mappedX * renderWidth,
+                        y: yOffset + lm.y * renderHeight,
+                        effect: effectName
+                    };
+                };
+                // KTP Efek Semantic: Mengikat warna ke jari yang bersangkutan
+                rawPoints.push(mapPoint(landmarks[4], effectsList[pIdx % 4])); pIdx++;
+                rawPoints.push(mapPoint(landmarks[8], effectsList[pIdx % 4])); pIdx++;
             }
         }
 
-        // --- SISTEM MERGE TITIK (Deteksi Jari Menempel / Cubitan) ---
+        // --- SISTEM CUBITAN (Merge Points) ---
         let mergedPoints = [];
-        // Toleransi jarak menempel (sekitar 8% dari lebar layar)
         const MERGE_THRESHOLD = canvasElement.width * 0.08; 
 
         for (let pt of rawPoints) {
             let isMerged = false;
             for (let mPt of mergedPoints) {
                 if (getDist(pt, mPt) < MERGE_THRESHOLD) {
-                    // Gabungkan di titik tengah
                     mPt.x = (mPt.x * mPt.count + pt.x) / (mPt.count + 1);
                     mPt.y = (mPt.y * mPt.count + pt.y) / (mPt.count + 1);
                     mPt.count++;
@@ -293,25 +433,21 @@ function drawFilteredArea(points, effect) {
                 }
             }
             if (!isMerged) {
-                // Titik baru lahir, dia mewarisi efek bawaannya!
                 mergedPoints.push({ x: pt.x, y: pt.y, count: 1, effect: pt.effect });
             }
         }
 
-        // --- RENDER AREA BERDASARKAN JUMLAH TITIK SETELAH DIGABUNG ---
+        // --- RENDER GEOMETRY ---
         if (mergedPoints.length === 2) {
             drawLines([mergedPoints[0], mergedPoints[1]], false);
-            statusText.innerText = `TRACKING: 2 POINTS`;
+            if(!isRecording) statusText.innerText = `TRACKING: 2 POINTS`;
 
         } else if (mergedPoints.length === 3) {
-            // Segitiga akan menggunakan efek dari jari pertama pembentuknya
             drawFilteredArea([mergedPoints[0], mergedPoints[1], mergedPoints[2]], mergedPoints[0].effect);
             drawLines([mergedPoints[0], mergedPoints[1], mergedPoints[2]], true);
-            statusText.innerText = `TRACKING: 3 POINTS`;
+            if(!isRecording) statusText.innerText = `TRACKING: 3 POINTS`;
 
         } else if (mergedPoints.length === 4) {
-            
-            // ANTI-BOCOR: Mengurutkan secara melingkar
             let cx = (mergedPoints[0].x + mergedPoints[1].x + mergedPoints[2].x + mergedPoints[3].x) / 4;
             let cy = (mergedPoints[0].y + mergedPoints[1].y + mergedPoints[2].y + mergedPoints[3].y) / 4;
             
@@ -324,65 +460,117 @@ function drawFilteredArea(points, effect) {
             let P2 = mergedPoints[2];
             let P3 = mergedPoints[3];
 
-            // Cari perpotongan absolut garis silang (X)
-            const center = getIntersection(P0, P2, P1, P3);
+            const center = getIntersection(P0, P2, P1, P3) || {x: cx, y: cy};
 
-            if (center) {
-                // MAGIC-NYA DI SINI: Efek dirender berdasarkan JATI DIRI titiknya (P0.effect, P1.effect, dst)
-                // Jadi kalau jarimu diputar (P0 pindah ke bawah), filternya akan otomatis ikut ke bawah!
-                drawFilteredArea([P0, P1, center], P0.effect); 
-                drawFilteredArea([P1, P2, center], P1.effect);  
-                drawFilteredArea([P2, P3, center], P2.effect); 
-                drawFilteredArea([P3, P0, center], P3.effect);    
+            drawFilteredArea([P0, P1, center], P0.effect); 
+            drawFilteredArea([P1, P2, center], P1.effect);  
+            drawFilteredArea([P2, P3, center], P2.effect); 
+            drawFilteredArea([P3, P0, center], P3.effect);    
 
-                drawLines([P0, P1, P2, P3], true); 
-                drawLines([P0, P2], false); 
-                drawLines([P1, P3], false); 
-            }
+            drawLines([P0, P1, P2, P3], true); 
+            drawLines([P0, center, P1], false); 
+            drawLines([P2, center, P3], false); 
             
-            statusText.innerText = `TRACKING: 4 POINTS`;
+            if(!isRecording) statusText.innerText = `TRACKING: 4 POINTS`;
         } else {
-            statusText.innerText = `TRACKING: ${mergedPoints.length} POINTS`;
+            if(!isRecording) statusText.innerText = `TRACKING: WAITING...`;
+        }
+
+        // --- DRAW WATERMARK (ONLY IN RECORDING) ---
+        if (isRecording) {
+            ctx.save();
+            ctx.font = "600 16px Inter, sans-serif";
+            ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+            ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
+            ctx.shadowBlur = 4;
+            ctx.shadowOffsetX = 1;
+            ctx.shadowOffsetY = 1;
+            
+            ctx.textAlign = "left";
+            ctx.fillText("© 2026 RaDeripper", 30, canvasElement.height - 30);
+
+            ctx.textAlign = "center";
+            ctx.fillText("Recorded by manualtracking.vercel.app", canvasElement.width / 2, canvasElement.height - 30);
+            
+            ctx.restore();
         }
     }
 
-const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-hands.setOptions({
-    maxNumHands: 2,
-    modelComplexity: 1, 
-    minDetectionConfidence: 0.5, // Diturunkan agar lebih agresif menangkap tangan meskipun buram
-    minTrackingConfidence: 0.5   // Diturunkan agar tracking lebih menempel dan ugal-ugalan
-});
-hands.onResults(onResults);
+    const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+    hands.setOptions({
+        maxNumHands: 2,
+        modelComplexity: 1, 
+        minDetectionConfidence: 0.5, 
+        minTrackingConfidence: 0.5   
+    });
+    hands.onResults(onResults);
 
+    // Custom WebRTC Loop for forcing constraints
+    async function startCustomCamera() {
+        if (currentStream) {
+            currentStream.getTracks().forEach(track => track.stop());
+        }
+        if (currentLoopId) {
+            cancelAnimationFrame(currentLoopId);
+        }
+
+        // Apply device constraints
+        const constraints = {
+            video: {
+                facingMode: configLens,
+                width: { ideal: configWidth },
+                height: { ideal: configHeight },
+                frameRate: { ideal: configFps }
+            }
+        };
+
+        try {
+            currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+            videoElement.srcObject = currentStream;
+            
+            // Extract actual applied settings from device hardware
+            const track = currentStream.getVideoTracks()[0];
+            const settings = track.getSettings();
+            resInfo.innerText = `${settings.width}x${settings.height} - ${settings.frameRate}FPS`;
+
+            await new Promise((resolve) => {
+                videoElement.onloadedmetadata = () => {
+                    videoElement.play();
+                    resolve();
+                };
+            });
+
+            // The Rendering & Processing Loop
+            async function detectionLoop() {
+                if (!videoElement.paused && !videoElement.ended && videoElement.readyState >= 2) {
+                    if (videoElement.currentTime !== lastVideoTime) {
+                        lastVideoTime = videoElement.currentTime;
+                        // Send fresh frame to AI
+                        await hands.send({ image: videoElement });
+                    }
+                }
+                currentLoopId = requestAnimationFrame(detectionLoop);
+            }
+            detectionLoop();
+
+        } catch (error) {
+            console.error(error);
+            document.getElementById('loading-text').innerText = "ERROR: Camera/Hardware Access Denied.";
+            resInfo.innerText = "ERROR";
+        }
+    }
+
+    // Initial Start
     document.getElementById('start-btn').addEventListener('click', async () => {
         document.getElementById('start-btn').classList.add('hidden');
         document.getElementById('loading-text').classList.remove('hidden');
-
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }
-            });
-            videoElement.srcObject = stream;
-            
-            videoElement.onloadedmetadata = () => {
-                videoElement.play();
-                const camera = new Camera(videoElement, {
-                    onFrame: async () => await hands.send({image: videoElement}),
-                    width: 1280, height: 720
-                });
-                
-                camera.start().then(() => {
-                    const startScreen = document.getElementById('start-screen');
-                    startScreen.style.opacity = '0';
-                    setTimeout(() => startScreen.style.display = 'none', 700);
-                    document.getElementById('ui-layer').style.opacity = '1';
-                });
-            };
-        } catch (error) {
-            console.error(error);
-            document.getElementById('loading-text').innerText = "ERROR: Camera Access Denied.";
-        }
+        
+        await startCustomCamera();
+        
+        const startScreen = document.getElementById('start-screen');
+        startScreen.style.opacity = '0';
+        setTimeout(() => startScreen.style.display = 'none', 700);
+        document.getElementById('ui-layer').style.opacity = '1';
     });
 
 </script>
